@@ -1,7 +1,5 @@
 ################################
-#
 #  This blueprint deploys a Wavefront proxy
-#
 #################################
 formatVersion: 1
 inputs:
@@ -34,9 +32,9 @@ resources:
           instanceProtocol: tcp
           instancePort: 2878
       network: '${resource.wf_net.name}'
+      internetFacing: true
       instances:
         - '${resource.wf_proxy.id}'
-      internetFacing: true
   wf_proxy:
     type: Cloud.Machine
     properties:
@@ -50,13 +48,13 @@ resources:
         #cloud-config
         users:
           - name: grant
-              ssh-authorized-keys:
-              - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8rqxon4hRyV5cLNZczuJTe8dsZ33hpWHDU993r4iiY3t9bXqfmIHlIZ7dTL93nlvsgzVdOYMVGMOHMg/a1ZK0VRoKTS5BBhBGJejjDUfWRAtedZbM9JE5HHpks+L+nf8cOM14Os+Q3BV+z4MjYfIK5ZbV0IvUaY0kscQcE8cZoOTC2hHu/MPDneKJxG+HRQJfvqvnWz69/EXyi9iqtmOn0Xy9905qtbPNlDs1c4qF+zZ1qQCkMYP0Z4AVvLaPEJZlPmDnGqz5s1vVb130aXe1A11eq4RwgvZRxXW8i88pKqCGPuLRh7anqvSI15SLpA2KWvu7wD5CvhTisc/6TfVf
-              sudo: ['ALL=(ALL) NOPASSWD:ALL']
-              groups: sudo
-              shell: /bin/bash
+            ssh-authorized-keys:
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8rqxon4hRyV5cLNZczuJTe8dsZ33hpWHDU993r4iiY3t9bXqfmIHlIZ7dTL93nlvsgzVdOYMVGMOHMg/a1ZK0VRoKTS5BBhBGJejjDUfWRAtedZbM9JE5HHpks+L+nf8cOM14Os+Q3BV+z4MjYfIK5ZbV0IvUaY0kscQcE8cZoOTC2hHu/MPDneKJxG+HRQJfvqvnWz69/EXyi9iqtmOn0Xy9905qtbPNlDs1c4qF+zZ1qQCkMYP0Z4AVvLaPEJZlPmDnGqz5s1vVb130aXe1A11eq4RwgvZRxXW8i88pKqCGPuLRh7anqvSI15SLpA2KWvu7wD5CvhTisc/6TfVf
+            sudo: ['ALL=(ALL) NOPASSWD:ALL']
+            groups: sudo
+            shell: /bin/bash
         runcmd:
-          - 'sudo bash -c "$(curl -sL https://wavefront.com/install)" -- install --proxy --hostname ${input.dns_name}.vmwapj.com --wavefront-url https://longboard.wavefront.com --api-token ae0c3e27-9967-409f-bfcf-34f4c161bb1b'
+          - 'sudo bash -c "$(curl -sL https://wavefront.com/install)" -- install --proxy --proxy-address ${input.dns_name}.vmwapj.com --wavefront-url https://longboard.wavefront.com --api-token ae0c3e27-9967-409f-bfcf-34f4c161bb1b'
   Route53_Record:
     type: Cloud.Service.AWS.Route53.Record
     properties:
