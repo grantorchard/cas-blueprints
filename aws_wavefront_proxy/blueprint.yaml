@@ -1,0 +1,75 @@
+################################
+#
+#  This blueprint deploys a Wavefront proxy
+#
+#################################
+formatVersion: 1
+inputs:
+  account:
+    type: string
+    default: SDDC APJ AWS
+    enum:
+      - SDDC APJ AWS
+  region:
+    type: string
+    default: ap-southeast-2
+    enum:
+      - ap-southeast-2
+  route53_zone_id:
+    type: string
+    default: Z1DXP5AZ44Z4IY
+    enum:
+      - Z1DXP5AZ44Z4IY
+  dns_name:
+    type: string
+    pattern: '[a-z]'
+resources:
+  wf_lb:
+    type: Cloud.LoadBalancer
+    properties:
+      name: lb-wf
+      routes:
+        - protocol: tcp
+          port: 2878
+          instanceProtocol: tcp
+          instancePort: 2878
+      network: '${resource.wf_net.name}'
+      instances:
+        - '${resource.wf_proxy.id}'
+      internetFacing: true
+  wf_proxy:
+    type: Cloud.Machine
+    properties:
+      image: ubuntu 16.04
+      flavor: small
+      constraints:
+        - tag: 'platform:aws'
+      networks:
+        - name: '${resource.wf_net.name}'
+      cloudConfig: |
+        #cloud-config
+        users:
+          - name: grant
+              ssh-authorized-keys:
+              - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8rqxon4hRyV5cLNZczuJTe8dsZ33hpWHDU993r4iiY3t9bXqfmIHlIZ7dTL93nlvsgzVdOYMVGMOHMg/a1ZK0VRoKTS5BBhBGJejjDUfWRAtedZbM9JE5HHpks+L+nf8cOM14Os+Q3BV+z4MjYfIK5ZbV0IvUaY0kscQcE8cZoOTC2hHu/MPDneKJxG+HRQJfvqvnWz69/EXyi9iqtmOn0Xy9905qtbPNlDs1c4qF+zZ1qQCkMYP0Z4AVvLaPEJZlPmDnGqz5s1vVb130aXe1A11eq4RwgvZRxXW8i88pKqCGPuLRh7anqvSI15SLpA2KWvu7wD5CvhTisc/6TfVf
+              sudo: ['ALL=(ALL) NOPASSWD:ALL']
+              groups: sudo
+              shell: /bin/bash
+        runcmd:
+          - 'sudo bash -c "$(curl -sL https://wavefront.com/install)" -- install --proxy --hostname ${input.dns_name}.vmwapj.com --wavefront-url https://longboard.wavefront.com --api-token ae0c3e27-9967-409f-bfcf-34f4c161bb1b'
+  Route53_Record:
+    type: Cloud.Service.AWS.Route53.Record
+    properties:
+      name: '${input.dns_name}'
+      type: CNAME
+      region: '${input.region}'
+      account: SDDC APJ AWS
+      zone_id: '${input.route53_zone_id}'
+      ttl: 128
+      records:
+        - '${resource.wf_lb.address}'
+  wf_net:
+    type: Cloud.Network
+    properties:
+      name: net1
+      networkType: existing

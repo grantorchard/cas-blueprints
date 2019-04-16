@@ -1,0 +1,84 @@
+formatVersion: 1
+inputs:
+  count:
+    type: integer
+    minimum: 1
+    maxLength: 5
+    default: 3
+    title: Cluster Size
+  clustername:
+    type: string
+    title: Cluster Name
+resources:
+  elasticsearch:
+    type: Cloud.AWS.EC2.Instance
+    properties:
+      image: ubuntu 16.04
+      flavor: small
+      count: '${input.count}'
+      constraints:
+        - tag: 'platform:aws'
+      name: 'es-node${count.index}'
+      cloudConfig: |
+        #cloud-config
+        repo_update: true
+        package_upgrade: true
+        package_reboot_if_required: true
+        apt:
+          sources:
+            elastic-6.x.list:
+              - arches:
+                - amd64
+                source: 'deb https://artifacts.elastic.co/packages/6.x/apt stable main'
+                keyserver: 'https://artifacts.elastic.co/GPG-KEY-elasticsearch'
+        packages:
+          - default-jdk
+          - elasticsearch
+        hostname: 'es-node${count.index}'
+        rsyslog:
+          remotes:
+            lint: '192.168.200.25'
+        users:
+        - name: grant
+          ssh-authorized-keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8rqxon4hRyV5cLNZczuJTe8dsZ33hpWHDU993r4iiY3t9bXqfmIHlIZ7dTL93nlvsgzVdOYMVGMOHMg/a1ZK0VRoKTS5BBhBGJejjDUfWRAtedZbM9JE5HHpks+L+nf8cOM14Os+Q3BV+z4MjYfIK5ZbV0IvUaY0kscQcE8cZoOTC2hHu/MPDneKJxG+HRQJfvqvnWz69/EXyi9iqtmOn0Xy9905qtbPNlDs1c4qF+zZ1qQCkMYP0Z4AVvLaPEJZlPmDnGqz5s1vVb130aXe1A11eq4RwgvZRxXW8i88pKqCGPuLRh7anqvSI15SLpA2KWvu7wD5CvhTisc/6TfVf
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          groups: sudo
+          shell: /bin/bash
+          password: VMware1!
+          chpasswd:
+          - expire: False
+        runcmd:
+          - echo "*.*  @192.168.200.25:514" >> /etc/rsyslog.conf
+          - sed -i 's/KLogPermitNonKernelFacility on/KLogPermitNonKernelFacility off/s' /etc/rsyslog.conf
+          - 'bash -c "$(curl -sL https://wavefront.com/install)" -- install --agent --proxy-address 192.168.200.232 --proxy-port 2878'
+        write_files:
+          - path: /etc/telegraf/telegraf.d/elasticsearch.conf
+            permissions: '0755'
+            content: |
+              [[inputs.elasticsearch]]
+              #   ## Specify a list of one or more Elasticsearch servers
+              #   ## you can add username and password to your url to use basic authentication:
+                servers = ["http://localhost:9200"]
+              #
+              #   ## When local is true (the default), the node will read only its own stats.
+              #   ## Set local to false when you want to read the node stats from all nodes
+              #   ## of the cluster.
+                local = false
+              #
+              #   ## Set cluster_health to true when you want to also obtain cluster health stats
+                cluster_health = true
+              #
+              #   ## Set cluster_stats to true when you want to also obtain cluster stats from the
+              #   ## Master node.
+                cluster_stats = true
+      networks:
+        - name: '${resource.elasticsearch_net.name}'
+      tags:
+        - key: clustername
+          value: '${env.requestedAt}'
+  elasticsearch_net:
+    type: Cloud.Network
+    properties:
+      name: elasticsearch
+      networkType: existing

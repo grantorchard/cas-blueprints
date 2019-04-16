@@ -1,0 +1,60 @@
+formatVersion: 1
+inputs:
+  account:
+    type: string
+    default: 'SDDC APJ Azure'
+    enum:
+      - SDDC APJ Azure
+  region:
+    type: string
+    default: 'Australia East'
+    enum:
+      - 'Australia East'
+  db_user:
+    type: string
+    default: 'cmadmin'
+  db_password:
+    type: string
+    minLength: 8
+    maxLength: 32
+    default: 'VMware1!'
+
+resources:
+  resource_group:
+    type: Cloud.Azure.ResourceGroup
+    properties:
+      name: resourcegroup1
+
+  sql_db:
+    type: Cloud.Service.Azure.SQL.Database
+    properties:
+      name: sqldb-demo01
+      region: '${input.region}'
+      account: 'SDDC APJ Azure'
+      server_name: '${resource.sql_server.name}'
+      resource_group_name: '${resource.resource_group.resourceName}'
+
+  sql_server:
+    type: Cloud.Service.Azure.SQL.Server
+    properties:
+      name: sqlserver-demo01
+      region: '${input.region}'
+      account: 'SDDC APJ Azure'
+      version: '12.0'
+      administrator_login: '${input.db_user}'
+      resource_group_name: '${resource.resource_group.resourceName}'
+      administrator_login_password: '${input.db_password}'
+
+  machine:
+    type: Cloud.Azure.Machine
+    properties:
+      image: ubuntu 16.04
+      flavor: small
+      resourceGroupName: '${resource.resource_group.resourceName}'
+
+  network:
+    type: Cloud.Network
+    properties:
+      name: net1
+      networkType: existing
+      resourceGroupName: '${resource.resource_group.resourceName}'
