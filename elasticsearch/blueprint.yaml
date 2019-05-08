@@ -1,16 +1,39 @@
 formatVersion: 1
+
 inputs:
+
   count:
     type: integer
     minimum: 1
     maxLength: 5
     default: 3
     title: Cluster Size
-  clustername:
+
+  cluster_name:
     type: string
-    title: Cluster Name
+    title: Cluster name
+    default: escluster-001
+
+  log_server:
+    type: string
+    title: Log Server
+    description: IP Address to send logs to.
+    default: 192.168.200.25
+
+  wavefront_proxy:
+    type: string
+    title: Wavefront Proxy
+    default: wavefront.vmwapj.com
+
+  api_token:
+      type: string
+      title: Cloud Assembly API Token
+      description: Retrieved by accessing the 'My Account' menu under the organisation drop-down menu in the top right hand side of the screen. This is used to identify cluster members and form a cluster.
+      writeOnly: true
+
 resources:
-  elasticsearch:
+
+  elasticsearch_master:
     type: Cloud.AWS.EC2.Instance
     properties:
       image: ubuntu 16.04
@@ -18,7 +41,7 @@ resources:
       count: '${input.count}'
       constraints:
         - tag: 'platform:aws'
-      name: 'es-node${count.index}'
+      name: 'esmaster-node${count.index}'
       cloudConfig: |
         #cloud-config
         repo_update: true
@@ -34,10 +57,11 @@ resources:
         packages:
           - default-jdk
           - elasticsearch
-        hostname: 'es-node${count.index}'
+        hostname: 'esmaster-node[count.index]'
+        preserve_hostname: true
         rsyslog:
           remotes:
-            lint: '192.168.200.25'
+            lint: '${input.log_server}'
         users:
         - name: grant
           ssh-authorized-keys:
@@ -47,36 +71,117 @@ resources:
           shell: /bin/bash
           password: VMware1!
           chpasswd:
-          - expire: False
+          - expire: true
         runcmd:
-          - echo "*.*  @192.168.200.25:514" >> /etc/rsyslog.conf
-          - sed -i 's/KLogPermitNonKernelFacility on/KLogPermitNonKernelFacility off/s' /etc/rsyslog.conf
-          - 'bash -c "$(curl -sL https://wavefront.com/install)" -- install --agent --proxy-address 192.168.200.232 --proxy-port 2878'
+          - echo "*.*  @${input.log_server}:514" >> /etc/rsyslog.conf
+          - 'bash -c "$(curl -sL https://wavefront.com/install)" -- install --agent --proxy-address ${input.wavefront_proxy} --proxy-port 2878'
+          - export address=`ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'`
+          - sed "s/0.0.0.0/$address/g" /etc/elasticsearch/elasticsearch.yml
+          - git clone https://github.com/grantorchard/caspyr
+          - python3
         write_files:
           - path: /etc/telegraf/telegraf.d/elasticsearch.conf
-            permissions: '0755'
+            permissions: '0644'
             content: |
               [[inputs.elasticsearch]]
-              #   ## Specify a list of one or more Elasticsearch servers
-              #   ## you can add username and password to your url to use basic authentication:
                 servers = ["http://localhost:9200"]
-              #
-              #   ## When local is true (the default), the node will read only its own stats.
-              #   ## Set local to false when you want to read the node stats from all nodes
-              #   ## of the cluster.
                 local = false
-              #
-              #   ## Set cluster_health to true when you want to also obtain cluster health stats
                 cluster_health = true
-              #
-              #   ## Set cluster_stats to true when you want to also obtain cluster stats from the
-              #   ## Master node.
                 cluster_stats = true
+          - path: /etc/elasticsearch/elasticsearch.yml
+            permissions: '0644'
+            content: |
+              cluster.name: ${input.cluster_name}
+              node.name: ${resource.elasticsearch_master.hostname}
+              network.host: 0.0.0.0
+              node.master: true
+              node.data: false
+          - path: /etc/default/elasticsearch
+            permissions: '0644'
+            content: |
+              # Start Elasticsearch automatically (required for Ubuntu 16.04)
+              START_DAEMON=true
+          - path: /
       networks:
         - name: '${resource.elasticsearch_net.name}'
       tags:
-        - key: clustername
-          value: '${env.requestedAt}'
+        - key: '${input.cluster_name}'
+          value: master
+
+  elasticsearch_data:
+    type: Cloud.AWS.EC2.Instance
+    properties:
+      image: ubuntu 16.04
+      flavor: small
+      count: '${input.count}'
+      constraints:
+        - tag: 'platform:aws'
+      name: 'esdata-node${count.index}'
+      cloudConfig: |
+        #cloud-config
+        repo_update: true
+        package_upgrade: true
+        package_reboot_if_required: true
+        apt:
+          sources:
+            elastic-6.x.list:
+              - arches:
+                - amd64
+                source: 'deb https://artifacts.elastic.co/packages/6.x/apt stable main'
+                keyserver: 'https://artifacts.elastic.co/GPG-KEY-elasticsearch'
+        packages:
+          - default-jdk
+          - elasticsearch
+        hostname: 'esdata-node${count.index}'
+        preserve_hostname: true
+        rsyslog:
+          remotes:
+            lint: '${input.log_server}'
+        users:
+        - name: grant
+          ssh-authorized-keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC8rqxon4hRyV5cLNZczuJTe8dsZ33hpWHDU993r4iiY3t9bXqfmIHlIZ7dTL93nlvsgzVdOYMVGMOHMg/a1ZK0VRoKTS5BBhBGJejjDUfWRAtedZbM9JE5HHpks+L+nf8cOM14Os+Q3BV+z4MjYfIK5ZbV0IvUaY0kscQcE8cZoOTC2hHu/MPDneKJxG+HRQJfvqvnWz69/EXyi9iqtmOn0Xy9905qtbPNlDs1c4qF+zZ1qQCkMYP0Z4AVvLaPEJZlPmDnGqz5s1vVb130aXe1A11eq4RwgvZRxXW8i88pKqCGPuLRh7anqvSI15SLpA2KWvu7wD5CvhTisc/6TfVf
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          groups: sudo
+          shell: /bin/bash
+          password: VMware1!
+          chpasswd:
+          - expire: true
+        runcmd:
+          - echo "*.*  @${input.log_server}:514" >> /etc/rsyslog.conf
+          - export address=`ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}'`
+          - sed "s/0.0.0.0/$address/g" /etc/elasticsearch/elasticsearch.yml
+          - 'bash -c "$(curl -sL https://wavefront.com/install)" -- install --agent --proxy-address ${input.wavefront_proxy} --proxy-port 2878'
+        write_files:
+          - path: /etc/telegraf/telegraf.d/elasticsearch.conf
+            permissions: '0644'
+            content: |
+              [[inputs.elasticsearch]]
+                servers = ["http://localhost:9200"]
+                local = false
+                cluster_health = true
+                cluster_stats = true
+          - path: /etc/elasticsearch/elasticsearch.yml
+            permissions: '0644'
+            content: |
+              cluster.name: ${input.cluster_name}
+              node.name: ${resource.elasticsearch_data.hostname}
+              network.host: 0.0.0.0
+              node.master: false
+              node.data: true
+              index.number_of_shards: ${input.count}
+              index.number_of_replicas: ${input.count - 1}
+          - path: /etc/default/elasticsearch
+            permissions: '0644'
+            content: |
+              # Start Elasticsearch automatically (required for Ubuntu 16.04)
+              START_DAEMON=true
+      networks:
+        - name: '${resource.elasticsearch_net.name}'
+      tags:
+        - key: '${input.cluster_name}'
+          value: data
+
   elasticsearch_net:
     type: Cloud.Network
     properties:
